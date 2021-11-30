@@ -1,0 +1,111 @@
+name: edgex-device-modbus
+base: core18
+license: Apache-2.0
+adopt-info: device-modbus
+summary: Connect data Modbus to EdgeX using device-modbus reference Device Service
+title: EdgeX Modbus Device Service
+description: |
+  The official reference EdgeX device-modbus Device Service built using the 
+  device-sdk-go to interact with Modbus devices. 
+  Initially the daemon in the snap is disabled - a device profile must be
+  provisioned externally with core-metadata or provided to device-modbus inside
+  "$SNAP_DATA/config/device-modbus/res" before starting.
+
+# TODO: add armhf when the project supports this
+architectures:
+  - build-on: amd64
+  - build-on: arm64
+
+grade: stable
+confinement: strict
+
+# 1.x releases are epoch 1 and Ireland (2.x) is epoch 2
+epoch: 2
+
+slots:
+  edgex-secretstore-token:
+    interface: content
+    content: edgex-secretstore-token
+    source:
+      write: [$SNAP_DATA/device-modbus]
+
+apps:
+  device-modbus:
+    adapter: full
+    command: bin/device-modbus -confdir $SNAP_DATA/config/device-modbus -profile res --registry $CONSUL_ADDR
+    command-chain:
+      - bin/startup-env-var.sh
+    environment:
+      CONSUL_ADDR: "consul://localhost:8500"
+      DEVICE_PROFILESDIR: "$SNAP_DATA/config/device-modbus/res/profiles"
+      DEVICE_DEVICESDIR: "$SNAP_DATA/config/device-modbus/res/devices"
+      SECRETSTORE_TOKENFILE: $SNAP_DATA/device-modbus/secrets-token.json
+    daemon: simple
+    passthrough:
+      install-mode: disable
+    plugs: [network, network-bind]
+
+plugs:
+  device-config:
+    interface: content
+    content: device-config
+    target: $SNAP_DATA/config/device-modbus/res
+
+parts:
+  hooks:
+    source: snap/local/hooks
+    plugin: make
+    build-snaps:
+      - go/1.16/stable
+    override-build: |
+      cd $SNAPCRAFT_PART_SRC
+      make build
+      install -DT ./cmd/configure/configure "$SNAPCRAFT_PART_INSTALL/snap/hooks/configure"
+      install -DT ./cmd/install/install "$SNAPCRAFT_PART_INSTALL/snap/hooks/install"
+
+  device-modbus:
+    source: .
+    plugin: make
+    build-packages: [git, libzmq3-dev, zip, pkg-config]
+    build-snaps:
+      - go/1.16/stable
+    stage-packages: [libzmq5]
+    override-build: |
+      cd $SNAPCRAFT_PART_SRC
+
+      GIT_VERSION=$(git describe --tags --abbrev=0 | sed 's/v//')
+      if [ -z "$GIT_VERSION" ]; then
+        GIT_VERSION="0.0.0"
+      fi
+      snapcraftctl set-version ${GIT_VERSION}
+      # this is needed for make build
+      echo $GIT_VERSION > ./VERSION
+
+      go mod tidy
+      make build
+
+      install -DT "./cmd/device-modbus" "$SNAPCRAFT_PART_INSTALL/bin/device-modbus"
+
+      install -d "$SNAPCRAFT_PART_INSTALL/config/device-modbus/res/"
+
+      install -DT "./cmd/res/configuration.toml" "$SNAPCRAFT_PART_INSTALL/config/device-modbus/res/configuration.toml"
+
+      for fpath in ./cmd/res/profiles/*; do
+          fname=$(basename "$fpath")
+          install -DT "./cmd/res/profiles/${fname}" \
+          "$SNAPCRAFT_PART_INSTALL/config/device-modbus/res/profiles/${fname}"
+      done
+
+      for fpath in ./cmd/res/devices/*.toml; do
+          fname=$(basename "$fpath")
+          install -DT "./cmd/res/devices/${fname}" \
+          "$SNAPCRAFT_PART_INSTALL/config/device-modbus/res/devices/${fname}"
+      done
+
+      install -DT "./Attribution.txt" \
+         "$SNAPCRAFT_PART_INSTALL/usr/share/doc/device-modbus/Attribution.txt"
+      install -DT "./LICENSE" \
+         "$SNAPCRAFT_PART_INSTALL/usr/share/doc/device-modbus/LICENSE"
+  config-common:
+    plugin: dump
+    source: snap/local/runtime-helpers
