@@ -9,8 +9,8 @@ package main
 import (
 	"github.com/edgexfoundry/device-sdk-go/v2/pkg/startup"
 
-	"github.com/edgexfoundry/device-modbus-go"
-	"github.com/edgexfoundry/device-modbus-go/internal/driver"
+	"github.com/1486756632/device-modbus-go"
+	"github.com/1486756632/device-modbus-go/internal/driver"
 )
 
 const (
